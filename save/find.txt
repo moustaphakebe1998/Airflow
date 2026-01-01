@@ -1,0 +1,1 @@
+docker logs -f airflow_scheduler | grep -A 5 "train_deep_learning_model"
