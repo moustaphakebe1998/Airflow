@@ -1,0 +1,154 @@
+services:
+  postgres:
+    image: postgres:13
+    container_name: airflow_postgres
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  airflow-webserver:
+    image: apache/airflow:2.9.3
+    container_name: airflow_webserver
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - AIRFLOW__WEBSERVER__SECRET_KEY=my_secret_key_change_this
+      - AIRFLOW_UID=50000
+      - ELASTIC_PASSWORD=Z25ft0VLU2fpiqOXRSEc
+      - ELASTIC_HOST=host.docker.internal
+      - ELASTIC_PORT=9200
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./data:/opt/airflow/data
+      - ./output:/opt/airflow/output
+      - ./models:/opt/airflow/models
+      - ./key:/opt/airflow/key
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    user: "50000:0"
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        echo "=== Installing packages ==="
+        pip install --no-cache-dir pandas scikit-learn elasticsearch
+        
+        echo "=== Initializing Airflow DB ==="
+        airflow db migrate
+        
+        echo "=== Creating admin user ==="
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Moustapha \
+          --lastname Kebe \
+          --role Admin \
+          --email moustaphakebe1998@gmail.com 2>/dev/null || echo "User already exists"
+        
+        echo "=== Starting Airflow Webserver ==="
+        exec airflow webserver
+    restart: always
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.3
+    container_name: airflow_scheduler
+    depends_on:
+      - airflow-webserver
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - AIRFLOW_UID=50000
+      - ELASTIC_PASSWORD=Z25ft0VLU2fpiqOXRSEc
+      - ELASTIC_HOST=host.docker.internal
+      - ELASTIC_PORT=9200
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./data:/opt/airflow/data
+      - ./output:/opt/airflow/output
+      - ./models:/opt/airflow/models
+      - ./key:/opt/airflow/key
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    user: "50000:0"
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        echo "=== Installing packages ==="
+        pip install --no-cache-dir pandas scikit-learn elasticsearch tensorflow matplotlib seaborn requests
+        
+        echo "=== Starting Airflow Scheduler ==="
+        exec airflow scheduler
+    restart: always
+
+  fastapi:
+    image: python:3.11-slim
+    container_name: fastapi_deployment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=airflow
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./fastapi_app:/app
+      - ./models:/app/models
+    working_dir: /app
+    command: >
+      bash -c "
+        pip install --no-cache-dir fastapi==0.104.1 uvicorn[standard]==0.24.0 scikit-learn  tensorflow psycopg2-binary &&
+        uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      "
+    restart: always
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - MB_DB_TYPE=postgres
+      - MB_DB_DBNAME=airflow
+      - MB_DB_PORT=5432
+      - MB_DB_USER=airflow
+      - MB_DB_PASS=airflow
+      - MB_DB_HOST=postgres
+    ports:
+      - "3000:3000"
+    volumes:
+      - metabase_data:/metabase-data
+    restart: always
+
+volumes:
+  postgres_data:
+  metabase_data:
