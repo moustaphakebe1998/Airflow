@@ -1,6 +1,5 @@
 FROM apache/airflow:3.1.5
 
-# Passer en mode root pour les dépendances système
 USER root
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -8,14 +7,10 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Revenir à l'utilisateur airflow
 USER airflow
 
-# 1. Mise à jour de pip pour éviter les erreurs de roue (wheels)
 RUN pip install --no-cache-dir --upgrade pip
 
-# 2. Installation FORCÉE des versions compatibles de FastAPI/Pydantic
-# On les installe en même temps que vos autres packages pour que pip résolve les conflits
 RUN pip install --no-cache-dir \
     "fastapi>=0.115.0" \
     "pydantic>=2.7.0" \
@@ -25,9 +20,5 @@ RUN pip install --no-cache-dir \
     apache-airflow-providers-amazon \
     apache-airflow-providers-elasticsearch  \
     apache-airflow-providers-trino
-
-# Copier vos fichiers si nécessaire
-# COPY requirements.txt /opt/airflow/requirements.txt
-# RUN pip install --no-cache-dir -r /opt/airflow/requirements.txt
 
 WORKDIR /opt/airflow
